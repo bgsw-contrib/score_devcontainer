@@ -73,11 +73,11 @@ installed_version() {
 # Only this repository's own checkout ships the catalog next to run-tool;
 # consumer repositories that copied just this file fall through to Bazel.
 pinned_version() {
-  local tool="$1"
+    local tool="$1"
     local installer="${SCRIPT_DIR}/internal/devcontainer/install.py"
     command -v python3 >/dev/null 2>&1 || return 1
     [[ -f "${installer}" ]] || return 1
-  python3 "${installer}" version "${tool}" 2>/dev/null
+    python3 "${installer}" version "${tool}" 2>/dev/null
 }
 
 if [[ "${strict}" -eq 0 ]] && command -v "${tool_name}" >/dev/null 2>&1; then

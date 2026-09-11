@@ -43,7 +43,12 @@ cat > "${fake_bin}/bazel" <<'EOF'
 set -euo pipefail
 printf '%s\n' "$@" > "${BAZEL_OUTPUT}"
 EOF
-chmod +x "${fake_bin}/shellcheck" "${fake_bin}/bazel"
+
+cat > "${fake_bin}/unknown-tool" <<'EOF'
+#!/usr/bin/env bash
+printf 'Unknown Tool 1.0.0\n'
+EOF
+chmod +x "${fake_bin}/shellcheck" "${fake_bin}/bazel" "${fake_bin}/unknown-tool"
 
 assert_lines() {
     local actual_file="$1"
@@ -76,6 +81,16 @@ assert_lines "${version_args_output}" -v -version --version
 assert_lines "${bazel_output}" \
     "run" \
     "@score_devcontainer//tools:shellcheck" \
+    "--" \
+    "check.sh"
+[[ ! -e "${tool_output}" ]]
+
+# An installed tool absent from the catalog must also use the Bazel target.
+rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+"${runner}" unknown-tool check.sh
+assert_lines "${bazel_output}" \
+    "run" \
+    "@score_devcontainer//tools:unknown-tool" \
     "--" \
     "check.sh"
 [[ ! -e "${tool_output}" ]]
