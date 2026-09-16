@@ -48,7 +48,29 @@ cat > "${fake_bin}/unknown-tool" <<'EOF'
 #!/usr/bin/env bash
 printf 'Unknown Tool 1.0.0\n'
 EOF
-chmod +x "${fake_bin}/shellcheck" "${fake_bin}/bazel" "${fake_bin}/unknown-tool"
+
+cat > "${fake_bin}/special-tool" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+tool_name=$(basename "$0")
+case "${tool_name}" in
+    bazelisk) version="1.27.0" ;;
+    starpls) version="0.1.22" ;;
+    *) exit 1 ;;
+esac
+if [[ "$#" -eq 1 && "$1" == version ]]; then
+    printf '%s\n' "$1" >> "${VERSION_ARGS_OUTPUT}"
+    printf '%s %s\n' "${tool_name}" "${version}"
+    exit 0
+fi
+if [[ "$#" -gt 0 ]]; then
+    printf '%s\n' "$@" > "${TOOL_OUTPUT}"
+fi
+EOF
+chmod +x "${fake_bin}/shellcheck" "${fake_bin}/bazel" \
+    "${fake_bin}/unknown-tool" "${fake_bin}/special-tool"
+ln -s special-tool "${fake_bin}/bazelisk"
+ln -s special-tool "${fake_bin}/starpls"
 
 assert_lines() {
     local actual_file="$1"
@@ -62,6 +84,7 @@ export PATH="${fake_bin}:${PATH}"
 export TOOL_OUTPUT="${tool_output}"
 export VERSION_ARGS_OUTPUT="${version_args_output}"
 export BAZEL_OUTPUT="${bazel_output}"
+export RUN_TOOL_CONTAINER_MODE=host
 export INVALID_VERSION_ARGS="|-v|-version|"
 export SUCCESS_VERSION_ARG="--version"
 
@@ -70,6 +93,20 @@ export FAKE_VERSION="0.10.0"
 "${runner}" shellcheck --help
 assert_lines "${version_args_output}" -v -version --version
 assert_lines "${tool_output}" --help
+[[ ! -e "${bazel_output}" ]]
+
+# Bazelisk and Starpls must use only their explicit version subcommand; their
+# --version output describes the Bazel or language-server release instead.
+rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+"${runner}" bazelisk check.sh
+assert_lines "${version_args_output}" version
+assert_lines "${tool_output}" check.sh
+[[ ! -e "${bazel_output}" ]]
+
+rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+"${runner}" starpls check.sh
+assert_lines "${version_args_output}" version
+assert_lines "${tool_output}" check.sh
 [[ ! -e "${bazel_output}" ]]
 
 # When no version flag returns a parseable version, installed_version returns 1

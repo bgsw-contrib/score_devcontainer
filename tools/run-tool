@@ -20,8 +20,13 @@
 
 set -euo pipefail
 
-SCRIPT_PATH=$(readlink -f "$0")
-SCRIPT_DIR=$(dirname -- "${SCRIPT_PATH}")
+SOURCE=${BASH_SOURCE[0]}
+while [[ -L "${SOURCE}" ]]; do
+    SOURCE_DIR=$(cd -P -- "$(dirname -- "${SOURCE}")" && pwd)
+    SOURCE=$(readlink "${SOURCE}")
+    [[ "${SOURCE}" == /* ]] || SOURCE="${SOURCE_DIR}/${SOURCE}"
+done
+SCRIPT_DIR=$(cd -P -- "$(dirname -- "${SOURCE}")" && pwd)
 
 strict=0
 if [[ "${1:-}" == "--strict" ]]; then
@@ -70,6 +75,22 @@ installed_version() {
     return 1
 }
 
+# Tests can force either side of the container boundary without changing the
+# runtime's automatic detection behavior.
+in_container() {
+    case "${RUN_TOOL_CONTAINER_MODE:-auto}" in
+        host) return 1 ;;
+        container) return 0 ;;
+        auto)
+            [[ -f /.dockerenv ]] || [[ -f /run/.containerenv ]] || [[ -d /devcontainer ]]
+            ;;
+        *)
+            echo "Invalid RUN_TOOL_CONTAINER_MODE: ${RUN_TOOL_CONTAINER_MODE}" >&2
+            return 2
+            ;;
+    esac
+}
+
 # Only this repository's own checkout ships the catalog next to run-tool;
 # consumer repositories that copied just this file fall through to Bazel.
 pinned_version() {
@@ -83,7 +104,7 @@ pinned_version() {
 if [[ "${strict}" -eq 0 ]] && command -v "${tool_name}" >/dev/null 2>&1; then
   # A container built from this catalog only ever has the pinned version on
   # PATH, so no version check is needed there.
-  if [[ -f /.dockerenv ]] || [[ -f /run/.containerenv ]] || [[ -d /devcontainer ]]; then
+    if in_container; then
     exec "${tool_name}" "$@"
   fi
 
