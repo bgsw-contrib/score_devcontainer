@@ -16,6 +16,7 @@
 set -euo pipefail
 
 runfiles_root="${TEST_SRCDIR}/${TEST_WORKSPACE}"
+installer="${runfiles_root}/tools/internal/devcontainer/install.py"
 runner="${runfiles_root}/tools/run-tool"
 fake_bin="${TEST_TMPDIR}/bin"
 tool_output="${TEST_TMPDIR}/tool.args"
@@ -163,3 +164,37 @@ assert_lines "${bazel_output}" \
     "--" \
     "check.sh"
 [[ ! -e "${tool_output}" ]]
+
+# Verify that the embedded catalog in run-tool matches the lockfile catalog.
+# shellcheck disable=SC1090
+eval "$(sed -n '/^pinned_version() {/,/^}/p' "${runner}")"
+
+catalog_versions="${TEST_TMPDIR}/catalog-versions"
+runner_versions="${TEST_TMPDIR}/runner-versions"
+
+python3 -c '
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path("'"${installer}"'").parent))
+from install import load_catalog_versions
+for tool, ver in sorted(load_catalog_versions().items()):
+    print(f"{tool}={ver}")
+' > "${catalog_versions}"
+
+while IFS='=' read -r tool expected_ver; do
+    actual_ver="$(pinned_version "${tool}")"
+    [[ "${actual_ver}" == "${expected_ver}" ]] || {
+        printf 'pinned_version mismatch for %s: expected %s, got %s\n' \
+            "${tool}" "${expected_ver}" "${actual_ver}" >&2
+        exit 1
+    }
+    printf '%s=%s\n' "${tool}" "${actual_ver}" >> "${runner_versions}"
+done < "${catalog_versions}"
+
+diff -u "${catalog_versions}" "${runner_versions}"
+
+# An uncatalogued tool must return non-zero from pinned_version.
+if pinned_version "unknown-tool" >/dev/null 2>&1; then
+    echo "pinned_version unexpectedly succeeded for unknown-tool" >&2
+    exit 1
+fi
