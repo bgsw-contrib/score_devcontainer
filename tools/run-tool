@@ -110,7 +110,7 @@ if [[ "${strict}" -eq 0 ]] && command -v "${tool_name}" >/dev/null 2>&1; then
   # A container built from this catalog only ever has the pinned version on
   # PATH, so no version check is needed there.
   # shellcheck disable=SC2310
-    if in_container; then
+  if in_container; then
     exec "${tool_name}" "$@"
   fi
 
