@@ -34,13 +34,15 @@ def _render_pinned_versions(versions: dict[str, str]) -> str:
         '    case "$1" in',
     ]
     for command in sorted(versions):
-        lines.append(f'        {command}) printf \'%s\\n\' "{versions[command]}" ;;')
-    lines.extend([
-        "        *) return 1 ;;",
-        "    esac",
-        "}",
-        RUN_TOOL_END,
-    ])
+        lines.append(f"        {command}) printf '%s\\n' \"{versions[command]}\" ;;")
+    lines.extend(
+        [
+            "        *) return 1 ;;",
+            "    esac",
+            "}",
+            RUN_TOOL_END,
+        ]
+    )
     return "\n".join(lines)
 
 

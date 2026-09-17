@@ -89,8 +89,13 @@ export RUN_TOOL_CONTAINER_MODE=host
 export INVALID_VERSION_ARGS="|-v|-version|"
 export SUCCESS_VERSION_ARG="--version"
 
+reset_outputs() {
+    rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+}
+
 # A tool may reject -v and -version; the runner must continue to --version.
 export FAKE_VERSION="0.10.0"
+reset_outputs
 "${runner}" shellcheck --help
 assert_lines "${version_args_output}" -v -version --version
 assert_lines "${tool_output}" --help
@@ -98,13 +103,13 @@ assert_lines "${tool_output}" --help
 
 # Bazelisk and Starpls must use only their explicit version subcommand; their
 # --version output describes the Bazel or language-server release instead.
-rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+reset_outputs
 "${runner}" bazelisk check.sh
 assert_lines "${version_args_output}" version
 assert_lines "${tool_output}" check.sh
 [[ ! -e "${bazel_output}" ]]
 
-rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+reset_outputs
 "${runner}" starpls check.sh
 assert_lines "${version_args_output}" version
 assert_lines "${tool_output}" check.sh
@@ -112,7 +117,7 @@ assert_lines "${tool_output}" check.sh
 
 # When no version flag returns a parseable version, installed_version returns 1
 # and the runner must fall back to Bazel.
-rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+reset_outputs
 export INVALID_VERSION_ARGS="|-v|-version|--version|"
 "${runner}" shellcheck check.sh
 assert_lines "${version_args_output}" -v -version --version
@@ -124,7 +129,7 @@ assert_lines "${bazel_output}" \
 [[ ! -e "${tool_output}" ]]
 
 # An installed tool absent from the catalog must also use the Bazel target.
-rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+reset_outputs
 "${runner}" unknown-tool check.sh
 assert_lines "${bazel_output}" \
     "run" \
@@ -133,8 +138,22 @@ assert_lines "${bazel_output}" \
     "check.sh"
 [[ ! -e "${tool_output}" ]]
 
+# Without Bazel, an unavailable tool must report exit status 127.
+no_bazel_bin="${TEST_TMPDIR}/no-bazel-bin"
+mkdir -p "${no_bazel_bin}"
+if PATH="${no_bazel_bin}" /bin/bash "${runner}" missing-tool check.sh \
+    > "${TEST_TMPDIR}/no-bazel.output" 2>&1; then
+    echo "runner unexpectedly succeeded without Bazel" >&2
+    exit 1
+else
+    no_bazel_status=$?
+fi
+[[ "${no_bazel_status}" -eq 127 ]]
+grep -Fx "Could not run 'missing-tool': no container command or Bazel executable is available." \
+    "${TEST_TMPDIR}/no-bazel.output"
+
 # Strict mode always uses the Bazel target.
-rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+reset_outputs
 export INVALID_VERSION_ARGS="|-v|-version|"
 "${runner}" --strict shellcheck check.sh
 assert_lines "${bazel_output}" \
@@ -145,7 +164,7 @@ assert_lines "${bazel_output}" \
 [[ ! -e "${tool_output}" ]]
 
 # A mismatched local version uses the Bazel target.
-rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+reset_outputs
 export FAKE_VERSION="0.9.0"
 "${runner}" shellcheck check.sh
 assert_lines "${bazel_output}" \
@@ -156,7 +175,7 @@ assert_lines "${bazel_output}" \
 [[ ! -e "${tool_output}" ]]
 
 # An unavailable local tool uses the Bazel target.
-rm -f "${tool_output}" "${version_args_output}" "${bazel_output}"
+reset_outputs
 "${runner}" missing-tool check.sh
 assert_lines "${bazel_output}" \
     "run" \
@@ -165,7 +184,8 @@ assert_lines "${bazel_output}" \
     "check.sh"
 [[ ! -e "${tool_output}" ]]
 
-# Verify that the embedded catalog in run-tool matches the lockfile catalog.
+# The runner embeds the catalog as a shell function; extract and evaluate only
+# that generated function so the test can compare it with the source catalog.
 # shellcheck disable=SC1090
 eval "$(sed -n '/^pinned_version() {/,/^}/p' "${runner}")"
 

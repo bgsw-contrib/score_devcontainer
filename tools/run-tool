@@ -72,7 +72,6 @@ installed_version() {
 in_container() {
     case "${RUN_TOOL_CONTAINER_MODE:-auto}" in
         host) return 1 ;;
-        container) return 0 ;;
         auto)
             [[ -f /.dockerenv ]] || [[ -f /run/.containerenv ]] || [[ -d /devcontainer ]]
             ;;
